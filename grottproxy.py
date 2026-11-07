@@ -16,7 +16,7 @@ if sys.platform != 'win32' :
    from signal import signal, SIGPIPE, SIG_DFL
 
 from grottdata import procdata
-from grottpolicy import classify_proxy_record, validate_record
+from grottpolicy import classify_proxy_record, take_frames, validate_record
 
 #import libscrc for additional crc checking
 # for compat reason (generate a message in the log) also done in proxy _init_
@@ -51,6 +51,7 @@ class Proxy:
     def __init__(self, conf):
         self.input_list = []
         self.channel = {}
+        self.stream_buffers = {}
         self.running = True
         print("\nGrott proxy mode started")
 
@@ -84,12 +85,25 @@ class Proxy:
         self.forward_to = (conf.growattip, conf.growattport)
 
     def stop(self):
-        """Unblock the accept loop. Safe to call from another thread."""
+        """Unblock the accept loop and close sockets it still owns."""
         self.running = False
+        for sock in list(self.stream_buffers):
+            self._discard_pending(sock)
+        for sock in list(self.input_list):
+            try:
+                sock.close()
+            except OSError:
+                pass
         try:
             self.server.close()
         except OSError:
             pass
+
+    def _discard_pending(self, sock):
+        pending = self.stream_buffers.pop(sock, b"")
+        if pending:
+            print("\t - Grott discarded incomplete frame: length=%s" % len(pending))
+        return pending
 
     def main(self, conf):
         self.input_list.append(self.server)
@@ -120,6 +134,7 @@ class Proxy:
     def on_accept(self, conf):
         clientsock, clientaddr = self.server.accept()
         # noforward is an explicit dev switch. The default remains cloud forwarding.
+        self.stream_buffers[clientsock] = b""
         if getattr(conf, "noforward", False):
             if conf.verbose:
                 print("\t -", clientaddr, "has connected (noforward, no upstream)")
@@ -137,6 +152,7 @@ class Proxy:
             if conf.verbose: 
                 print("\t - Can't establish connection with remote server."),
                 print("\t - Closing connection with client side", clientaddr)
+            self.stream_buffers.pop(clientsock, None)
             clientsock.close()
 
     def on_close(self, conf):
@@ -148,6 +164,9 @@ class Proxy:
                 print("\t -", "peer has disconnected")
 
         peer = self.channel.get(self.s)
+        pending = self._discard_pending(self.s)
+        if peer is not None:
+            pending = pending + self._discard_pending(peer)
         if self.s in self.input_list:
             self.input_list.remove(self.s)
         if peer is None:
@@ -171,7 +190,29 @@ class Proxy:
         del self.channel[self.s]
 
     def on_recv(self, conf):
-        data = self.data
+        # Logger sockets are a byte stream. Upstream replies stay one recv
+        # at a time so an existing server message is not reframed.
+        if self.s in self.stream_buffers:
+            self._recv_logger_stream(conf)
+        else:
+            self._handle_record(conf, self.data)
+
+    def _recv_logger_stream(self, conf):
+        buf = self.stream_buffers.get(self.s, b"") + self.data
+        frames, rest, error = take_frames(buf)
+        for frame in frames:
+            self._handle_record(conf, frame)
+            if self.s not in self.channel and self.s not in self.stream_buffers:
+                return
+        if error:
+            print("\t - Grott invalid record: %s length=%s" % (error, len(buf)))
+            self.stream_buffers[self.s] = b""
+            self.on_close(conf)
+            return
+        if self.s in self.stream_buffers:
+            self.stream_buffers[self.s] = rest
+
+    def _handle_record(self, conf, data):
         print("")
         print("\t - " + "Growatt packet received:")
         peer = self.channel.get(self.s)

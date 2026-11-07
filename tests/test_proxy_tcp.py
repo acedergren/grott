@@ -140,8 +140,9 @@ def test_proxy_drops_truncated_and_bad_crc_without_forwarding(make_conf, capsys)
     assert corrupted_result["upstream"] == b""
     assert corrupted_result["mqtt"] == []
     captured = capsys.readouterr().out
-    assert "length mismatch" in captured
-    assert "declared_payload=257" in captured
+    # A short TCP read is an unfinished frame, not a finished record with a
+    # bad length. Closing the logger drops it without echoing the bytes.
+    assert "discarded incomplete frame: length=40" in captured
     assert "checksum mismatch" in captured
     assert sample.hex() not in captured
     assert truncated.hex() not in captured

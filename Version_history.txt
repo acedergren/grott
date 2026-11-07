@@ -1,4 +1,10 @@
 Version history 
+#Review tranche on acedergren/grott, after merged PR 1 (13577c0). Runtime version string stays 2.8.3.
+#       Logger TCP reassembly. Upstream replies stay one recv. Env port and minrecl are ints.
+#       MQTT errors no longer catch BaseException and redact configured secrets.
+#       Older protocols are length-checked only. Isolated compose network is internal.
+#       Not an arm64 image and not a cloud-free logger mode.
+#
 #Fork tranche on acedergren/grott, base fb52e2d4 (upstream 2.8.3). Runtime version string stays 2.8.3.
 #       Regression tests for the examples/grotttest.py T06NNNN packet, decrypt, MQTT JSON, and TCP proxy
 #       Python 3.12 image replaces the Python 3.7 dockerfile. Direct dependencies are pinned.

@@ -464,8 +464,9 @@ class Conf :
         print("\nGrott process environmental variables")
         if os.getenv('gmode') in ("sniff", "proxy") :  self.mode = self.getenv('gmode')
         if os.getenv('gverbose') != None :  self.verbose = self.getenv('gverbose')
-        if os.getenv('gminrecl') != None : 
-            if 0 <= int(os.getenv('gminrecl')) <= 255  :     self.minrecl = self.getenv('gminrecl')
+        if os.getenv('gminrecl') != None :
+            if 0 <= int(os.getenv('gminrecl')) <= 255:
+                self.minrecl = int(self.getenv('gminrecl'))
         if os.getenv('gdecrypt') != None : self.decrypt = self.getenv('gdecrypt')
         if os.getenv('gcompat') != None :  self.compat = self.getenv('gcompat')
         if os.getenv('gincludeall') != None :  self.includeall = self.getenv('gincludeall')
@@ -484,8 +485,9 @@ class Conf :
                 self.grottip = self.getenv('ggrottip')
             except: 
                 if self.verbose : print("\nGrott IP address env invalid")
-        if os.getenv('ggrottport') != None : 
-            if 0 <= int(os.getenv('ggrottport')) <= 65535  :  self.grottport = self.getenv('ggrottport')
+        if os.getenv('ggrottport') != None :
+            if 0 <= int(os.getenv('ggrottport')) <= 65535:
+                self.grottport = int(self.getenv('ggrottport'))
         if os.getenv('gvalueoffset') != None :     
             if 0 <= int(os.getenv('gvalueoffset')) <= 255  :  self.valueoffset = self.getenv('gvalueoffset')
         if os.getenv('ggrowattip') != None :    

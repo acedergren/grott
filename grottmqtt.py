@@ -5,6 +5,20 @@
 import paho.mqtt.publish as publish
 
 
+def redact_secrets(conf, text):
+    """Remove configured secrets from a log line. The text is otherwise kept."""
+    redacted = text
+    for secret in (
+        getattr(conf, "mqttpsw", None),
+        getattr(conf, "pvapikey", None),
+        getattr(conf, "ifpsw", None),
+        getattr(conf, "iftoken", None),
+    ):
+        if isinstance(secret, str) and secret and secret in redacted:
+            redacted = redacted.replace(secret, "**secret**")
+    return redacted
+
+
 def publish_payload(conf, topic, payload):
     """Publish one Grott JSON payload. Failures are logged, not raised."""
     if conf.mqttretain:
@@ -32,6 +46,8 @@ def publish_payload(conf, topic, payload):
     except ConnectionRefusedError:
         if conf.verbose:
             print("\t - " + "MQTT connection refused by target")
-    except BaseException as error:
+    except Exception as error:
+        # paho 2.2 publish.single uses CallbackAPIVersion.VERSION2 internally.
+        # Do not catch BaseException: that swallowed KeyboardInterrupt.
         if conf.verbose:
-            print("\t - " + "MQTT send failed:", str(error))
+            print("\t - " + "MQTT send failed:", redact_secrets(conf, "%s: %s" % (type(error).__name__, error)))
