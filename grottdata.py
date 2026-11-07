@@ -4,19 +4,18 @@
 
 #import time
 from datetime import datetime, timedelta
-from os import times_result
 #import pytz
 import time
 import sys
 import struct
 import textwrap
-from itertools import cycle # to support "cycling" the iterator
 import json, codecs
 from typing import Dict
 # requests
 
-#import mqtt                       
-import paho.mqtt.publish as publish
+from grottcrypto import decrypt
+from grottlayout import decode_fields, resolve_layout
+from grottmqtt import publish_payload
 
 
 class GrottPvOutLimit:
@@ -51,27 +50,6 @@ def format_multi_line(prefix, string, size=80):
             size -= 1
     return '\n'.join([prefix + line for line in textwrap.wrap(string, size)])
 
-#decrypt data. 
-def decrypt(decdata) :   
-
-    ndecdata = len(decdata)
-
-    # Create mask and convert to hexadecimal
-    mask = "Growatt"
-    hex_mask = ['{:02x}'.format(ord(x)) for x in mask]    
-    nmask = len(hex_mask)
-
-    #start decrypt routine 
-    unscrambled = list(decdata[0:8])                                            #take unscramble header
-    
-    for i,j in zip(range(0,ndecdata-8),cycle(range(0,nmask))): 
-        unscrambled = unscrambled + [decdata[i+8] ^ int(hex_mask[j],16)]
-    
-    result_string = "".join("{:02x}".format(n) for n in unscrambled)
-    
-    print("\t - " + "Growatt data decrypted V2")   
-    return result_string        
-
 def str2bool(defstr):
     if defstr in ("True", "true", "TRUE", "y", "Y", "yes", "YES", 1, "1") : defret = True 
     if defstr in ("False", "false", "FALSE", "n", "N", "no", "NO", 0, "0") : defret = False 
@@ -91,44 +69,8 @@ def procdata(conf,data):
 
     # automatic detect protocol (decryption and protocol) only if compat = False!
     novalidrec = False
-    if conf.compat is False : 
-        if conf.verbose : 
-            print("\t - " + "Grott automatic protocol detection")  
-            print("\t - " + "Grott data record length", ndata)
-        #print(header)
-        layout = "T" + header[6:8] + header[12:14] + header[14:16]
-        #v270 add X for extended except for smart monitor records
-        if ((ndata > 375) and not is_smart_meter) :  layout = layout + "X"
-
-        #v270 no invtype added to layout for smart monitor records
-        if (conf.invtype != "default") and not is_smart_meter :
-                layout = layout + conf.invtype.upper()
-
-        if header[14:16] == "50" : buffered = "yes"
-        else: buffered = "no" 
-
-        if conf.verbose : print("\t - " + "layout   : ", layout)
-        try:            
-            # does record layout record exists? 
-            test = conf.recorddict[layout]
-        except:
-            #try generic if generic record exist
-            if conf.verbose : print("\t - " + "no matching record layout found, try generic")
-            if header[14:16] in ("04","50") :
-                layout = layout.replace(header[12:16], "NNNN")
-                try:
-                    # does generic record layout record exists? 
-                    test = conf.recorddict[layout]
-                except:
-                    #no valid record fall back on old processing? 
-                    if conf.verbose : print("\t - " + "no matching record layout found, standard processing performed")
-                    layout = "none"
-                    novalidrec = True  
-            else:         
-                novalidrec = True     
-    
-        conf.layout = layout
-        if conf.verbose : print("\t - " + "Record layout used : ", layout)
+    if conf.compat is False:
+        layout, novalidrec, buffered = resolve_layout(conf, header, ndata)
     
     #Decrypt 
     try: 
@@ -207,66 +149,9 @@ def procdata(conf,data):
 
         
         
-        try:
-            #v270 try if logstart and log fields are defined, if yes prepare log fields 
-            logstart = conf.recorddict[layout]["logstart"]["value"] 
-            logdict = {}
-            logdict = bytes.fromhex(result_string[conf.recorddict[layout]["logstart"]["value"]:len(result_string)-4]).decode("ASCII").split(",")
-        except:
-            pass
-
-        #v270 log data record processing (SDM630 smart monitor with railog 
-        #if rectype == "data" : 
-        for keyword in  conf.recorddict[layout].keys() :
-            
-            if keyword not in ("decrypt","date","logstart","device") :  
-                #try if keyword should be included 
-                include=True
-                try:
-                    #try if key type is specified 
-                    if conf.recorddict[layout][keyword]["incl"] == "no" : 
-                        include=False
-                except: 
-                    #no include statement keyword should be process, set include to prevent except errors
-                    include = True
-                #process only keyword needs to be included (default):     
-                try: 
-                    if ((include) or (conf.includeall)): 
-                        try:
-                            #try if key type is specified  
-                            keytype = conf.recorddict[layout][keyword]["type"]           
-                        except: 
-                            #if not default is num
-                            keytype = "num"               
-                        if keytype == "text" :
-                            definedkey[keyword] = result_string[conf.recorddict[layout][keyword]["value"]:conf.recorddict[layout][keyword]["value"]+(conf.recorddict[layout][keyword]["length"]*2)]
-                            definedkey[keyword] = codecs.decode(definedkey[keyword], "hex").decode('utf-8')
-                            #print(definedkey[keyword])
-                        if keytype == "num" :
-                        #else:                    
-                            definedkey[keyword] = int(result_string[conf.recorddict[layout][keyword]["value"]:conf.recorddict[layout][keyword]["value"]+(conf.recorddict[layout][keyword]["length"]*2)],16)                                     
-                        if keytype == "numx" :
-                            #process signed integer 
-                            keybytes = bytes.fromhex(result_string[conf.recorddict[layout][keyword]["value"]:conf.recorddict[layout][keyword]["value"]+(conf.recorddict[layout][keyword]["length"]*2)])
-                            definedkey[keyword] = int.from_bytes(keybytes, byteorder='big', signed=True)
-                        if keytype == "log" :
-                            # Proces log fields
-                            definedkey[keyword] = logdict[conf.recorddict[layout][keyword]["pos"]-1]
-                        if keytype == "logpos" :
-                        #only display this field if positive    
-                            # Proces log fields
-                            if float(logdict[conf.recorddict[layout][keyword]["pos"]-1]) > 0 : 
-                                definedkey[keyword] = logdict[conf.recorddict[layout][keyword]["pos"]-1]
-                            else : definedkey[keyword] = 0
-                        if keytype == "logneg" :
-                        #only display this field if negative    
-                            # Proces log fields
-                            if float(logdict[conf.recorddict[layout][keyword]["pos"]-1]) < 0 : 
-                                definedkey[keyword] = logdict[conf.recorddict[layout][keyword]["pos"]-1]    
-                            else : definedkey[keyword] = 0
-                except: 
-                    if conf.verbose : print("\t - grottdata - error in keyword processing : ", keyword + " ,data processing stopped") 
-                    return(8) 
+        definedkey, decode_error = decode_fields(conf, layout, result_string)
+        if decode_error:
+            return decode_error 
                                  
         # test if pvserial was defined, if not take inverterid from config.
         device_defined = False 
@@ -486,19 +371,7 @@ def procdata(conf,data):
                 else: mqtttopic = conf.mqtttopic    
             print("\t - " + 'Grott MQTT topic used : ' + mqtttopic)   
             
-            if conf.mqttretain:
-               if conf.verbose: print("\t - " + 'Grott MQTT message retain enabled')  
-
-            try:
-                #v2.7.1 add retrain variable  
-                publish.single(mqtttopic, payload=jsonmsg, qos=0, retain=conf.mqttretain, hostname=conf.mqttip,port=conf.mqttport, client_id=conf.inverterid, keepalive=60, auth=conf.pubauth)
-                if conf.verbose: print("\t - " + 'MQTT message message sent') 
-            except TimeoutError:     
-                if conf.verbose: print("\t - " + 'MQTT connection time out error') 
-            except ConnectionRefusedError:     
-                if conf.verbose: print("\t - " + 'MQTT connection refused by target')     
-            except BaseException as error:     
-                if conf.verbose: print("\t - "+ 'MQTT send failed:', str(error)) 
+            publish_payload(conf, mqtttopic, jsonmsg) 
         else:
             if conf.verbose: print("\t - " + 'No MQTT message sent, MQTT disabled') 
 

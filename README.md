@@ -2,7 +2,22 @@
 ## The Growatt Inverter Monitor 
 [![Donate](https://img.shields.io/badge/Donate-PayPal-green.svg)](https://www.paypal.com/donate?business=RQFS46F9JTESQ&item_name=Grott+&currency_code=EUR)
 #### Before using grott please read disclaimer: https://github.com/johanmeijer/grott/wiki/@disclaimer,-statement-of-use-and-limitations
-### From 17-05-2024 this version (2.8.3) is the new master 
+### From 17-05-2024 this version (2.8.3) is the new master
+
+### Fork note (acedergren/grott)
+
+This repository is a fork of johanmeijer/grott at commit `fb52e2d4`. Upstream does not ship a LICENSE file. This fork does not add one and does not relicense the code.
+
+Default proxy behaviour is unchanged: records are still forwarded to `server.growatt.com` unless `noforward` is set. The isolated profile in `examples/profiles/isolated.ini` is opt-in, read-only, and not a cloud-independent replacement. Proxy and sniff still depend on the Growatt path in normal use. Grottserver and the writable register API are outside this change.
+
+Test and image commands, the regression vector, and residual risks are in `docs/modernisering-sv.md`. The remaining refactoring order is in `docs/refactor-plan.md`.
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/python -m pytest tests -q
+docker build -f docker/dockerfile -t grott:local .
+``` 
 
 Growatt inverters can send performance and status metrics (log data) to the Growatt company servers. The inverters rely on either a ShineWIFI module or a ShineLAN box to relay the data to Growatt. The metrics stored on the Growatt servers then can be viewed on the Growatt website or using the ShinePhone mobile app. 
 
