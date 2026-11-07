@@ -55,8 +55,6 @@ class Upstream:
                     if not chunk:
                         break
                     self.payload += chunk
-                    if self.payload:
-                        break
         finally:
             if conn is not None:
                 try:
@@ -101,9 +99,9 @@ class MqttCatcher:
     def _on_message(self, client, userdata, message):
         self.messages.append((message.topic, message.payload, bool(message.retain)))
 
-    def wait(self, timeout=3):
+    def wait(self, timeout=3, count=1):
         deadline = time.time() + timeout
-        while time.time() < deadline and not self.messages:
+        while time.time() < deadline and len(self.messages) < count:
             time.sleep(0.05)
         return list(self.messages)
 
@@ -115,7 +113,7 @@ class MqttCatcher:
             pass
 
 
-def run_proxy(conf, payload, topic, upstream_wait=1.5):
+def run_proxy(conf, payload, topic, upstream_wait=1.5, gap=0.0, mqtt_count=1):
     """Drive one client record through Proxy against a fake upstream."""
     from grottproxy import Proxy
 
@@ -145,9 +143,13 @@ def run_proxy(conf, payload, topic, upstream_wait=1.5):
     thread = threading.Thread(target=_main, daemon=True)
     thread.start()
     client = socket.create_connection(("127.0.0.1", listen_port), timeout=5)
+    chunks = payload if isinstance(payload, (list, tuple)) else [payload]
     try:
-        client.sendall(payload)
-        messages = catcher.wait(timeout=upstream_wait)
+        for index, chunk in enumerate(chunks):
+            if index and gap:
+                time.sleep(gap)
+            client.sendall(chunk)
+        messages = catcher.wait(timeout=upstream_wait, count=mqtt_count)
         time.sleep(0.3)
     finally:
         try:

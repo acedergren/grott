@@ -1,0 +1,79 @@
+# TEST ONLY. This is not the shipped isolated profile.
+# docker/docker-compose.isolated.yml stays loopback-only, MQTT off, noforward on.
+#
+# This overlay turns MQTT on so a test can read the JSON contract. It publishes
+# no host ports. noforward stays on: a real logger still gets no Growatt ACK.
+#
+# The broker and the watcher join the grott container network namespace and
+# use 127.0.0.1. That is a test arrangement, not a change to the shipped
+# profile. On this workspace dockerd is started with iptables disabled, and a
+# separate container on the internal bridge cannot complete a TCP handshake
+# to another container. Sharing the namespace keeps the broker on the same
+# loopback the shipped listen socket already uses, and it keeps the internal
+# network's missing default route.
+#
+# Secrets are created under /tmp/grott-isolated-verify by
+# scripts/verify_isolated_compose.py and are not stored in git.
+# The sample is injected with `docker exec` into the grott container.
+
+services:
+  grott:
+    image: grott:local
+    container_name: grott-mqtt-test
+    volumes:
+      - /tmp/grott-isolated-verify/grott.ini:/app/grott.ini:ro
+      - /tmp/grott-isolated-verify/mqtt_password:/run/secrets/mqtt_password:ro
+    environment:
+      - gblockcmd=True
+      - gnoforward=True
+      - gnomqtt=False
+      - gmqttauth=True
+      - gmqttuser=grott-test
+      - gmqttpassword_file=/run/secrets/mqtt_password
+      - gpvoutput=False
+      - ginflux=False
+      - ginflux2=False
+      - gextension=false
+      - TZ=Europe/Stockholm
+    networks:
+      - verify
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import socket; s=socket.create_connection(("127.0.0.1",5279),2); s.close()
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 8s
+    restart: "no"
+
+  mosquitto:
+    image: eclipse-mosquitto:2.0.18
+    container_name: grott-mqtt-test-broker
+    network_mode: "service:grott"
+    command: ["mosquitto", "-c", "/mosquitto/config/mosquitto.conf"]
+    volumes:
+      - /tmp/grott-isolated-verify/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - /tmp/grott-isolated-verify/passwd:/mosquitto/config/passwd:ro
+    depends_on:
+      grott:
+        condition: service_healthy
+    restart: "no"
+
+  watcher:
+    image: grott:local
+    container_name: grott-mqtt-test-watch
+    network_mode: "service:grott"
+    volumes:
+      - /tmp/grott-isolated-verify:/verify
+    entrypoint: ["python", "/verify/watch.py"]
+    depends_on:
+      grott:
+        condition: service_healthy
+    restart: "no"
+
+networks:
+  verify:
+    internal: true

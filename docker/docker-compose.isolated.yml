@@ -29,3 +29,19 @@ services:
       - ginflux2=False
       - gextension=false
       - TZ=Europe/Stockholm
+    networks:
+      - isolated
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import socket; s=socket.create_connection(("127.0.0.1",5279),2); s.close()
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 8s
+
+networks:
+  isolated:
+    internal: true
