@@ -8,6 +8,26 @@ import ipaddress
 from os import walk
 from grottdata import format_multi_line, str2bool
 
+
+def read_secret_file(path):
+    """Read a secret from a file. One trailing newline is removed.
+
+    The file contents are never printed. A missing file stops startup with
+    the path only.
+    """
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            value = handle.read()
+    except OSError:
+        print("\t - Grott could not read secret file: %s" % path)
+        raise SystemExit(1)
+    if value.endswith("\n"):
+        value = value[:-1]
+    if value.endswith("\r"):
+        value = value[:-1]
+    return value
+
+
 class Conf : 
 
     def __init__(self, vrm): 
@@ -24,6 +44,7 @@ class Conf :
         self.invtypemap = {}
         self.includeall = False                                                                      #Include all defined keys from layout (also incl = no)
         self.blockcmd = False                                                                       #Block Inverter and Shine configure commands                
+        self.noforward = False                                                                      #Opt-in: do not open the upstream Growatt socket
         self.noipf = False                                                                          #Allow IP change if needed
         self.gtime  = "auto"                                                                        #time used =  auto: use record time or if not valid server time, alternative server: use always server time 
         self.sendbuf = True                                                                         # enable / disable sending historical data from buffer
@@ -206,6 +227,7 @@ class Conf :
         print("\tinvtypemap:          \t",self.invtypemap)
         print("\tinclude_all:         \t",self.includeall)
         print("\tblockcmd:            \t",self.blockcmd)
+        print("\tnoforward:           \t",self.noforward)
         print("\tnoipf:               \t",self.noipf)
         print("\ttime:                \t",self.gtime)
         print("\tsendbuf:             \t",self.sendbuf)
@@ -238,7 +260,7 @@ class Conf :
         print("\tpvdisv1:             \t",self.pvdisv1)
         print("\tpvtemp:              \t",self.pvtemp)   
         print("\tpvurl:               \t",self.pvurl)
-        print("\tpvapikey:            \t",self.pvapikey)                
+        print("\tpvapikey:            \t","**secret**")                
         print("\tpvinverters:         \t",self.pvinverters)
         if self.pvinverters == 1 :
             print("\tpvsystemid:          \t",self.pvsystemid[1])
@@ -337,7 +359,8 @@ class Conf :
         self.decrypt = str2bool(self.decrypt)
         self.compat = str2bool(self.compat)
         self.includeall = str2bool(self.includeall)
-        self.blockcmd = str2bool(self.blockcmd)     
+        self.blockcmd = str2bool(self.blockcmd)
+        self.noforward = str2bool(self.noforward)
         self.noipf = str2bool(self.noipf) 
         self.sendbuf = str2bool(self.sendbuf)      
         #
@@ -367,6 +390,7 @@ class Conf :
         if config.has_option("Generic","invtypemap"): self.invtypemap = eval(config.get("Generic","invtypemap"))
         if config.has_option("Generic","inverterid"): self.inverterid = config.get("Generic","inverterid")
         if config.has_option("Generic","blockcmd"): self.blockcmd = config.get("Generic","blockcmd")
+        if config.has_option("Generic","noforward"): self.noforward = config.get("Generic","noforward")
         if config.has_option("Generic","noipf"): self.noipf = config.get("Generic","noipf")
         if config.has_option("Generic","time"): self.gtime = config.get("Generic","time")
         if config.has_option("Generic","sendbuf"): self.sendbuf = config.get("Generic","sendbuf")
@@ -388,11 +412,15 @@ class Conf :
         if config.has_option("MQTT","auth"): self.mqttauth = config.getboolean("MQTT","auth")
         if config.has_option("MQTT","user"): self.mqttuser = config.get("MQTT","user")
         if config.has_option("MQTT","password"): self.mqttpsw = config.get("MQTT","password")
+        if config.has_option("MQTT","password_file"):
+            self.mqttpsw = read_secret_file(config.get("MQTT","password_file"))
         if config.has_option("PVOutput","pvoutput"): self.pvoutput = config.get("PVOutput","pvoutput")
         if config.has_option("PVOutput","pvtemp"): self.pvtemp = config.get("PVOutput","pvtemp")
         if config.has_option("PVOutput","pvdisv1"): self.pvdisv1 = config.get("PVOutput","pvdisv1")
         if config.has_option("PVOutput","pvinverters"): self.pvinverters = config.getint("PVOutput","pvinverters")
         if config.has_option("PVOutput","apikey"): self.pvapikey = config.get("PVOutput","apikey")
+        if config.has_option("PVOutput","apikey_file"):
+            self.pvapikey = read_secret_file(config.get("PVOutput","apikey_file"))
         if config.has_option("PVOutput", "pvuplimit"): self.pvuplimit = config.getint("PVOutput", "pvuplimit")
         # if more inverter are installed at the same interface (shinelink) get systemids
         #if self.pvinverters > 1 : 
@@ -409,9 +437,13 @@ class Conf :
         if config.has_option("influx","port"): self.ifport = int(config.get("influx","port"))
         if config.has_option("influx","user"): self.ifuser = config.get("influx","user")
         if config.has_option("influx","password"): self.ifpsw = config.get("influx","password")
+        if config.has_option("influx","password_file"):
+            self.ifpsw = read_secret_file(config.get("influx","password_file"))
         if config.has_option("influx","org"): self.iforg = config.get("influx","org")
         if config.has_option("influx","bucket"): self.ifbucket = config.get("influx","bucket")
         if config.has_option("influx","token"): self.iftoken = config.get("influx","token")
+        if config.has_option("influx","token_file"):
+            self.iftoken = read_secret_file(config.get("influx","token_file"))
         #extensionINFLUX
         if config.has_option("extension","extension"): self.extension = config.get("extension","extension") 
         if config.has_option("extension","extname"): self.extname = config.get("extension","extname") 
@@ -420,7 +452,12 @@ class Conf :
     def getenv(self, envvar):
         envval = os.getenv(envvar)
 
-        if self.verbose: print(f"\n\tPulled '{envvar}={envval}' from the environment")
+        if self.verbose:
+            shown = envval
+            lowered = envvar.lower()
+            if any(part in lowered for part in ("password", "token", "apikey", "secret")):
+                shown = "**secret**"
+            print(f"\n\tPulled '{envvar}={shown}' from the environment")
         return envval
 
     def procenv(self): 
@@ -435,6 +472,7 @@ class Conf :
         if os.getenv('ginvtype') != None :  self.invtype = self.getenv('ginvtype')
         if os.getenv('ginvtypemap') != None :  self.invtypemap = eval(self.getenv('ginvtypemap'))
         if os.getenv('gblockcmd') != None : self.blockcmd = self.getenv('gblockcmd')
+        if os.getenv('gnoforward') != None : self.noforward = self.getenv('gnoforward')
         if os.getenv('gnoipf') != None : self.noipf = self.getenv('gnoipf')
         if os.getenv('gtime') in ("auto", "server") : self.gtime = self.getenv('gtime')
         if os.getenv('gtimezone') != None : self.tmzone = self.getenv('gtimezone')
@@ -481,11 +519,15 @@ class Conf :
         if os.getenv('gmqttauth') != None :  self.mqttauth = self.getenv('gmqttauth')
         if os.getenv('gmqttuser') != None :  self.mqttuser = self.getenv('gmqttuser')
         if os.getenv('gmqttpassword') != None : self.mqttpsw = self.getenv('gmqttpassword')
+        if os.getenv('gmqttpassword_file') != None :
+            self.mqttpsw = read_secret_file(self.getenv('gmqttpassword_file'))
         #Handle PVOutput variables
         if os.getenv('gpvoutput') != None :  self.pvoutput = self.getenv('gpvoutput')
         if os.getenv('gpvtemp') != None :  self.pvtemp = self.getenv('gpvtemp')
         if os.getenv('gpvdisv1') != None :  self.pvdisv1 = self.getenv('gpvdisv1')
         if os.getenv('gpvapikey') != None :  self.pvapikey = self.getenv('gpvapikey')
+        if os.getenv('gpvapikey_file') != None :
+            self.pvapikey = read_secret_file(self.getenv('gpvapikey_file'))
         if os.getenv('gpvinverters') != None :  self.pvinverters = int(self.getenv('gpvinverters'))
         for x in range(self.pvinverters+1) : 
                 if os.getenv('gpvsystemid'+str(x)) != None :  self.pvsystemid[x] = self.getenv('gpvsystemid'+ str(x))
@@ -509,9 +551,13 @@ class Conf :
                 if self.verbose : print("\nGrott InfluxDB server Port address env invalid")      
         if os.getenv('gifuser') != None :  self.ifuser = self.getenv('gifuser')
         if os.getenv('gifpassword') != None :  self.ifpsw = self.getenv('gifpassword')
+        if os.getenv('gifpassword_file') != None :
+            self.ifpsw = read_secret_file(self.getenv('gifpassword_file'))
         if os.getenv('giforg') != None :  self.iforg = self.getenv('giforg')
         if os.getenv('gifbucket') != None :  self.ifbucket = self.getenv('gifbucket')
         if os.getenv('giftoken') != None :  self.iftoken = self.getenv('giftoken')
+        if os.getenv('giftoken_file') != None :
+            self.iftoken = read_secret_file(self.getenv('giftoken_file'))
         #Handle Extension
         if os.getenv('gextension') != None :  self.extension = self.getenv('gextension')
         if os.getenv('gextname') != None :  self.extname = self.getenv('gextname')

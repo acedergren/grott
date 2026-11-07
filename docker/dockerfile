@@ -1,26 +1,25 @@
-FROM python:3.7-slim
+# Reproducible Grott image. Replaces the Python 3.7 recipe.
+# Build from the repository root:
+#   docker build -f docker/dockerfile -t grott:local .
+# Default process settings still forward to the Growatt server.
+# The isolated dev profile is examples/profiles/isolated.ini and does not
+# publish host ports. Proxy/sniff operation still depends on the cloud path
+# unless noforward is set explicitly.
 
-ENV LANG en_US.UTF-8
-ENV LC_ALL en_US.UTF-8
+FROM python:3.12.16-slim@sha256:4840d514c583a4d3d8cad3940e68dee6f0f6f3635c12fcd0a3d74c21a5b93a54
 
-# Run updates
-RUN apt-get clean && apt-get update && apt-get upgrade -y
-
-# Set the locale
-RUN apt-get install -y locales && locale-gen en_US.UTF-8
-
-#Install required python packages 
-RUN pip install paho-mqtt
-RUN pip install requests 
-RUN pip install influxdb
-RUN pip install influxdb-client 
-
-COPY grott.py /app/grott.py
-COPY grottconf.py /app/grottconf.py
-COPY grottdata.py /app/grottdata.py
-COPY grottproxy.py /app/grottproxy.py
-COPY grottsniffer.py /app/grottsniffer.py
-COPY grott.ini /app/grott.ini
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PIP_ROOT_USER_ACTION=ignore
 
 WORKDIR /app
+
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
+
+COPY grott.py grottconf.py grottdata.py grottproxy.py grottsniffer.py grottcrypto.py grottlayout.py grottmqtt.py grottpolicy.py T06NNNNXMOD.json /app/
+COPY examples/grott.ini /app/grott.ini
+
 CMD ["python", "-u", "grott.py", "-v"]

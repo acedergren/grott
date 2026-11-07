@@ -1,4 +1,11 @@
 Version history 
+#Fork tranche on acedergren/grott, base fb52e2d4 (upstream 2.8.3). Runtime version string stays 2.8.3.
+#       Regression tests for the examples/grotttest.py T06NNNN packet, decrypt, MQTT JSON, and TCP proxy
+#       Python 3.12 image replaces the Python 3.7 dockerfile. Direct dependencies are pinned.
+#       TCP policy, decrypt, layout decode, and MQTT publish are separate modules. Algorithms unchanged.
+#       Opt-in isolated profile: noforward, blockcmd, loopback bind, external outputs off, secrets from files.
+#       Default mode still forwards to the Growatt server. Grottserver is not part of this tranche.
+#
 #Done in 1.0.4
 #       Clean up coding 
 #       Test with real data 

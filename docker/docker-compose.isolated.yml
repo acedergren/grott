@@ -1,0 +1,31 @@
+# Local isolated dev stack. No host ports are published.
+# The process binds 127.0.0.1 inside the container and does not forward
+# upstream. It does not replace a normal Grott proxy.
+# Build and start from the repository root:
+#   docker compose -f docker/docker-compose.isolated.yml up --build
+# Stop with:
+#   docker compose -f docker/docker-compose.isolated.yml down
+# Do not point this file at a Home Assistant broker, a Growatt account,
+# or a physical inverter.
+
+services:
+  grott:
+    build:
+      context: ..
+      dockerfile: docker/dockerfile
+    image: grott:local
+    container_name: grott-isolated
+    restart: "no"
+    volumes:
+      - ../examples/profiles/isolated.ini:/app/grott.ini:ro
+      # Mount a local secret only if an output is explicitly enabled:
+      # - ../secrets/mqtt_password:/run/secrets/mqtt_password:ro
+    environment:
+      - gblockcmd=True
+      - gnoforward=True
+      - gnomqtt=True
+      - gpvoutput=False
+      - ginflux=False
+      - ginflux2=False
+      - gextension=false
+      - TZ=Europe/Stockholm
